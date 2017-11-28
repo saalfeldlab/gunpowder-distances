@@ -47,8 +47,9 @@ class AddBoundaryDistance(BatchFilter):
             distance_volume_type=None,
             boundary_volume_type=None,
             normalize=None,
-            scale=None,
-            scale_args=None):
+            normalize_args=None):
+            #scale=None,
+            #scale_args=None):
 
         if label_volume_type is None:
             label_volume_type = VolumeTypes.GT_LABELS
@@ -57,8 +58,8 @@ class AddBoundaryDistance(BatchFilter):
         self.distance_volume_type = distance_volume_type
         self.boundary_volume_type = boundary_volume_type
         self.normalize = normalize
-        self.scale = scale
-        self.scale_args = scale_args
+        #self.scale = scale
+        self.normalize_args = normalize_args
 
     def setup(self):
 
@@ -116,10 +117,11 @@ class AddBoundaryDistance(BatchFilter):
 
             # todo: inverted distance
             distances[labels == 0] = - distances[labels == 0]
+        distances = np.expand_dims(distances, 0)
 
 
-        #if self.normalize is not None:
-        #    self.__normalize(gradients, self.normalize)
+        if self.normalize is not None:
+            distances = self.__normalize(distances, self.normalize, self.normalize_args)
 
         #if self.scale is not None:
         #    self.__scale(gradients, distances, self.scale, self.scale_args)
@@ -181,6 +183,11 @@ class AddBoundaryDistance(BatchFilter):
 
         return boundaries
 
+    def __normalize(self, distances, normalize, normalize_args):
+
+        if normalize == 'tanh':
+            scale = normalize_args
+            return np.tanh(distances/scale)
     #def __normalize(self, gradients, norm):
 #
     #    dims = gradients.shape[0]
