@@ -99,10 +99,12 @@ class AddBoundaryDistance(BatchFilter):
         boundaries = 1.0 - boundaries
 
         if np.sum(boundaries == 0) == 0:
-
+            max_distance = min(dim*vs for dim,vs in zip(labels.shape,voxel_size))
+            if np.sum(labels)==0:
             # no boundary -- no distance to compute
-            distances = np.zeros(labels.shape, dtype=np.float32)
-
+                distances = - np.ones(labels.shape, dtype=np.float32)*max_distance
+            else:
+                distances = np.ones(labels.shape, dtype=np.float32)*max_distance
         else:
 
             # get distances (voxel_size/2 because image is doubled)
