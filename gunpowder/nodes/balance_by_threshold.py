@@ -1,5 +1,5 @@
 from .batch_filter import BatchFilter
-from gunpowder.volume import VolumeTypes, Volume
+from gunpowder.array import ArrayKeys, Array
 import collections
 import itertools
 import logging
@@ -77,7 +77,7 @@ class BalanceByThreshold(BatchFilter):
             self.skip_next = False
             return
 
-        labels = batch.volumes[self.labels]
+        labels = batch.arrays[self.labels]
 
         #assert len(np.unique(labels.data)) <= 2, (
         #    "Found more than two labels in %s."%self.labels)
@@ -91,7 +91,7 @@ class BalanceByThreshold(BatchFilter):
 
         # set error_scale to 0 in masked-out areas
         for identifier in self.masks:
-            mask = batch.volumes[identifier]
+            mask = batch.arrays[identifier]
             assert labels.data.shape == mask.data.shape, (
                 "Shape of mask %s %s does not match %s %s"%(
                     mask,
@@ -122,7 +122,7 @@ class BalanceByThreshold(BatchFilter):
 
         spec = self.spec[self.scales].copy()
         spec.roi = labels.spec.roi
-        batch.volumes[self.scales] = Volume(error_scale, spec)
+        batch.arrays[self.scales] = Array(error_scale, spec)
 
     def __balance(self, labels, scale):
 
