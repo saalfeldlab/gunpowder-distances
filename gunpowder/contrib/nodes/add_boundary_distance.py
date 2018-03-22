@@ -16,13 +16,13 @@ class AddBoundaryDistance(BatchFilter):
 
     Args:
 
-        label_array_key(:class:``VolumeType``): The volume type to read the
+        label_array_key(:class:``ArrayKeys``): The volume type to read the
             labels from.
 
-        distance_array_key(:class:``VolumeType``, optional): The volume type
+        distance_array_key(:class:``ArrayKeys``, optional): The volume type
             to generate containing the values of the distance transform.
 
-        boundary_array_key(:class:``VolumeType``, optional): The volume type
+        boundary_array_key(:class:``ArrayKeys``, optional): The volume type
             to generate containing a boundary labeling. Note this volume will
             be doubled as it encodes boundaries between voxels.
     '''
@@ -92,7 +92,7 @@ class AddBoundaryDistance(BatchFilter):
         boundaries = 1.0 - boundaries
 
         if np.sum(boundaries == 0) == 0:
-            max_distance = min(dim*vs for dim,vs in zip(labels.shape,voxel_size))
+            max_distance = min(dim*vs for dim, vs in zip(labels.shape, voxel_size))
             if np.sum(labels) == 0:
                 distances = - np.ones(labels.shape, dtype=np.float32)*max_distance
             else:
@@ -134,7 +134,7 @@ class AddBoundaryDistance(BatchFilter):
             grown[tuple(slice(0, s) for s in boundaries.shape)] = boundaries
             spec.voxel_size = voxel_size/2
             logger.debug("voxel size of boundary volume: %s", spec.voxel_size)
-            batch.arrays[self.boundary_array_key] = Volume(grown, spec)
+            batch.arrays[self.boundary_array_key] = Array(grown, spec)
 
     def __find_boundaries(self, labels):
 
