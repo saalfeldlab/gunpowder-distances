@@ -111,7 +111,7 @@ class AddBoundaryDistance(BatchFilter):
 
             # todo: inverted distance
             distances[labels == 0] = - distances[labels == 0]
-        distances = np.expand_dims(distances, 0)
+        #distances = np.expand_dims(distances, 0)
 
 
         if self.normalize is not None:
