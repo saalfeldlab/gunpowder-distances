@@ -9,37 +9,26 @@ from gunpowder.nodes.batch_filter import BatchFilter
 logger = logging.getLogger(__name__)
 
 class AddBoundaryDistance(BatchFilter):
-    '''Add a volume with vectors pointing away from the closest boundary.
-
-    The vectors are the spacial gradients of the distance transform, i.e., the
-    distance to the boundary between labels or the background label (0).
+    '''Compute array with signed distances of labels. In contrast to AddDistance this node computes the distance to
+    boundaries by intermittently doubling the resolution. This allows for computing distances between labels of
+    different ids. If the labeling is binary or multiple label ids should be treated as binary labels use AddDistance.
 
     Args:
 
-        label_array_key(:class:``ArrayKeys``): The volume type to read the
-            labels from.
+        label_array_key(:class:``ArrayKey``): The :class:``ArrayKey`` to read the labels from.
 
-        distance_array_key(:class:``ArrayKeys``, optional): The volume type
-            to generate containing the values of the distance transform.
+        distance_array_key(:class:``ArrayKey``): The :class:``ArrayKey`` to generate containing the values of the
+            distance transform.
 
-        boundary_array_key(:class:``ArrayKeys``, optional): The volume type
-            to generate containing a boundary labeling. Note this volume will
-            be doubled as it encodes boundaries between voxels.
+        boundary_array_key(:class:``ArrayKey``, optional): The :class:``ArrayKey`` to generate containing the
+            label boundaries (at double resolution)
+
+        normalize(str): String defining the type of normalization, so far 'tanh'. None for no normalization.
+            'tanh': compute tanh(distance/normalize_args)
+
+        normalize_args: additional arguments for the normalization, specifics depend on normalize.
+
     '''
-
-        # gradient_array_key(:class:``VolumeType``): The volume type to
-        #     generate containing the gradients.
-        #
-        # normalize(string, optional): ``None``, ``'l1'``, or ``'l2'``. Specifies
-        #     if and how to normalize the gradients.
-        #
-        # scale(string, optional): ``None`` or ``exp``. If ``exp``, distance
-        #     gradients will be scaled by ``beta*e**(-d*alpha)``, where ``d`` is
-        #     the distance to the boundary.
-        #
-        # scale_args(tuple, optional): For ``exp`` a tuple with the values of
-        #     ``alpha`` and ``beta``.
-
 
     def __init__(
             self,
@@ -111,14 +100,9 @@ class AddBoundaryDistance(BatchFilter):
 
             # todo: inverted distance
             distances[labels == 0] = - distances[labels == 0]
-        #distances = np.expand_dims(distances, 0)
-
 
         if self.normalize is not None:
             distances = self.__normalize(distances, self.normalize, self.normalize_args)
-
-        #if self.scale is not None:
-        #    self.__scale(gradients, distances, self.scale, self.scale_args)
 
         spec = self.spec[self.distance_array_key].copy()
         spec.roi = request[self.distance_array_key].roi
@@ -183,27 +167,3 @@ class AddBoundaryDistance(BatchFilter):
             scale = normalize_args
             return np.tanh(distances/scale)
 
-    #def __normalize(self, gradients, norm):
-#
-    #    dims = gradients.shape[0]
-#
-    #    if norm == 'l1':
-    #        factors = sum([np.abs(gradients[d]) for d in range(dims)])
-    #    elif norm == 'l2':
-    #        factors = np.sqrt(
-    #                sum([np.square(gradients[d]) for d in range(dims)]))
-    #    else:
-    #        raise RuntimeError('norm %s not supported'%norm)
-#
-    #    factors[factors < 1e-5] = 1
-    #    gradients /= factors
-#
-    #def __scale(self, gradients, distances, scale, scale_args):
-#
-    #    dims = gradients.shape[0]
-#
-    #    if scale == 'exp':
-    #        alpha, beta = self.scale_args
-    #        factors = np.exp(-distances*alpha)*beta
-#
-    #    gradients *= factors

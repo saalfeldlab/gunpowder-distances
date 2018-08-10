@@ -9,36 +9,25 @@ from gunpowder.nodes.batch_filter import BatchFilter
 logger = logging.getLogger(__name__)
 
 class AddDistance(BatchFilter):
-    '''Add a volume with vectors pointing away from the closest boundary.
-
-    The vectors are the spacial gradients of the distance transform, i.e., the
-    distance to the boundary between labels or the background label (0).
+    '''Compute array with signed distances from specific labels
 
     Args:
 
-        label_array_key(:class:``ArrayKeys``): The volume type to read the
-            labels from.
+        label_array_key(:class:``ArrayKey``): The :class:``ArrayKey`` to read the labels from.
 
-        distance_array_key(:class:``ArrayKeys``, optional): The volume type
-            to generate containing the values of the distance transform.
+        distance_array_key(:class:``ArrayKey``): The :class:``ArrayKey`` to generate containing the values of the
+            distance transform.
 
-        boundary_array_key(:class:``ArrayKeys``, optional): The volume type
-            to generate containing a boundary labeling. Note this volume will
-            be doubled as it encodes boundaries between voxels.
+        normalize(str, optional): String defining the type of normalization, so far 'tanh'. None for no normalization.
+            'tanh': compute tanh(distance/normalize_args)
+
+        normalize_args(optional): additional arguments for the normalization, specifics depend on normalize.
+
+        label_id (int, tuple, optional): ids from which to compute distance transform (defaults to 1)
+
+        factor (int, tuple, optional): distances are downsampled by this factor
+
     '''
-
-        # gradient_array_key(:class:``VolumeType``): The volume type to
-        #     generate containing the gradients.
-        #
-        # normalize(string, optional): ``None``, ``'l1'``, or ``'l2'``. Specifies
-        #     if and how to normalize the gradients.
-        #
-        # scale(string, optional): ``None`` or ``exp``. If ``exp``, distance
-        #     gradients will be scaled by ``beta*e**(-d*alpha)``, where ``d`` is
-        #     the distance to the boundary.
-        #
-        # scale_args(tuple, optional): For ``exp`` a tuple with the values of
-        #     ``alpha`` and ``beta``.
 
     def __init__(
             self,
@@ -62,7 +51,7 @@ class AddDistance(BatchFilter):
 
         assert self.label_array_key in self.spec, (
             "Upstream does not provide %s needed by "
-            "AddBoundaryDistance"%self.label_array_key)
+            "AddDistance"%self.label_array_key)
 
         spec = self.spec[self.label_array_key].copy()
         spec.dtype = np.float32
@@ -95,7 +84,7 @@ class AddDistance(BatchFilter):
             distances = distance_transform_edt(binary_label, sampling=tuple(float(v) for v in voxel_size))
             distances -= distance_transform_edt(np.logical_not(binary_label), sampling=tuple(float(v) for v in
                                                                                              voxel_size))
-        #distances = np.expand_dims(distances, 0)
+
         if isinstance(self.factor, tuple):
             slices = tuple(slice(None, None, k) for k in self.factor)
         else:
@@ -109,10 +98,11 @@ class AddDistance(BatchFilter):
         spec.roi = request[self.distance_array_key].roi
         batch.arrays[self.distance_array_key] = Array(distances, spec)
 
-
     def __normalize(self, distances, norm, normalize_args):
         if norm == 'tanh':
             scale = normalize_args
             return np.tanh(distances/scale)
+        else:
+            raise ValueError("unknown normalization method {0:}".format(norm))
 
 
