@@ -119,7 +119,7 @@ class AddPrePostCleftDistance(BatchFilter):
                             self.presyn_distance_array_key in request):
                         try:
                             pre_neuron_id = np.array(list(self.cleft_to_presyn_neuron_id[cleft_id]))
-                            pre_mask = np.any(labels[...,None] == pre_neuron_id[None,...],axis=-1)
+                            pre_mask = np.any(labels[..., None] == pre_neuron_id[None, ...],axis=-1)
                             if self.include_cleft:
                                 pre_mask = np.any([pre_mask, clefts==cleft_id], axis=0)
                             presyn_distances[pre_mask] = np.max((presyn_distances, d), axis=0)[pre_mask]
