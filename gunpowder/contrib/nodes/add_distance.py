@@ -35,14 +35,14 @@ class AddDistance(BatchFilter):
             distance_array_key,
             normalize=None,
             normalize_args=None,
-            label_id=1,
+            label_id=None,
             factor=1):
 
         self.label_array_key = label_array_key
         self.distance_array_key = distance_array_key
         self.normalize = normalize
         self.normalize_args = normalize_args
-        if not isinstance(label_id, collections.Iterable):
+        if not isinstance(label_id, collections.Iterable) and label_id is not None:
             label_id = (label_id,)
         self.label_id = label_id
         self.factor = factor
@@ -69,9 +69,11 @@ class AddDistance(BatchFilter):
             return
 
         voxel_size = self.spec[self.label_array_key].voxel_size
-        binary_label = np.logical_or.reduce([batch.arrays[self.label_array_key].data == lid for lid in
+        if self.label_id is not None:
+            binary_label = np.logical_or.reduce([batch.arrays[self.label_array_key].data == lid for lid in
                                              self.label_id])
-
+        else:
+            binary_label = batch.arrays[self.label_array_key].data > 0
         dim = len(binary_label.shape)
         if binary_label.std() == 0:
             max_distance = min(dim*vs for dim, vs in zip(binary_label.shape, voxel_size))
