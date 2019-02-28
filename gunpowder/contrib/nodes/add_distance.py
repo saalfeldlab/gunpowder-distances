@@ -104,6 +104,10 @@ class AddDistance(BatchFilter):
         if norm == 'tanh':
             scale = normalize_args
             return np.tanh(distances/scale)
+        elif norm == 'tanh+':
+            scale = normalize_args[0]
+            add = normalize_args[1]
+            return np.tanh((distances+add)/scale)
         else:
             raise ValueError("unknown normalization method {0:}".format(norm))
 
