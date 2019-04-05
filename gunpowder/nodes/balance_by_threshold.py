@@ -99,26 +99,26 @@ class BalanceByThreshold(BatchFilter):
                     self.labels,
                     labels.data.shape))
             error_scale *= mask.data
+        if error_scale.sum()> 0:
+            if not self.slab:
+                slab = error_scale.shape
+            else:
+                # slab with -1 replaced by shape
+                slab = tuple(
+                    m if s == -1 else s
+                    for m, s in zip(error_scale.shape, self.slab))
 
-        if not self.slab:
-            slab = error_scale.shape
-        else:
-            # slab with -1 replaced by shape
-            slab = tuple(
-                m if s == -1 else s
-                for m, s in zip(error_scale.shape, self.slab))
+            slab_ranges = (
+                range(0, m, s)
+                for m, s in zip(error_scale.shape, slab))
 
-        slab_ranges = (
-            range(0, m, s)
-            for m, s in zip(error_scale.shape, slab))
-
-        for start in itertools.product(*slab_ranges):
-            slices = tuple(
-                slice(start[d], start[d] + slab[d])
-                for d in range(len(slab)))
-            self.__balance(
-                labels.data[slices],
-                error_scale[slices])
+            for start in itertools.product(*slab_ranges):
+                slices = tuple(
+                    slice(start[d], start[d] + slab[d])
+                    for d in range(len(slab)))
+                self.__balance(
+                    labels.data[slices],
+                    error_scale[slices])
 
         spec = self.spec[self.scales].copy()
         spec.roi = labels.spec.roi
