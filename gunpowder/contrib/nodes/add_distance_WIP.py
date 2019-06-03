@@ -1,14 +1,14 @@
 import logging
 import numpy as np
 import collections
-from numpy.lib.stride_tricks import as_strided
 from scipy.ndimage.morphology import distance_transform_edt
 from gunpowder.array import Array
 from gunpowder.nodes.batch_filter import BatchFilter
 
 logger = logging.getLogger(__name__)
 
-class AddDistance(BatchFilter):
+
+class AddDistanceWIP(BatchFilter):
     '''Compute array with signed distances from specific labels
 
     Args:
@@ -18,6 +18,9 @@ class AddDistance(BatchFilter):
         distance_array_key(:class:``ArrayKey``): The :class:``ArrayKey`` to generate containing the values of the
             distance transform.
 
+        mask_array_key(:class:``ArrayKey``): The :class:``ArrayKey`` to update in order to compensate for windowing
+        artifacts after distance transformation.
+
         normalize(str, optional): String defining the type of normalization, so far 'tanh'. None for no normalization.
             'tanh': compute tanh(distance/normalize_args)
 
@@ -26,7 +29,6 @@ class AddDistance(BatchFilter):
         label_id (int, tuple, optional): ids from which to compute distance transform (defaults to 1)
 
         factor (int, tuple, optional): distances are downsampled by this factor
-
     '''
 
     def __init__(
@@ -55,10 +57,15 @@ class AddDistance(BatchFilter):
             "Upstream does not provide %s needed by "
             "AddDistance"%self.label_array_key)
 
+        assert self.mask_array_key in self.spec, (
+            "Upstream does not provide %s needed by "
+            "AddDistance"%self.mask_array_key)
+
         spec = self.spec[self.label_array_key].copy()
         spec.dtype = np.float32
         spec.voxel_size *= self.factor
         self.provides(self.distance_array_key, spec)
+        self.provides(self.mask_array_key, spec)
 
     def prepare(self, request):
 
@@ -67,44 +74,56 @@ class AddDistance(BatchFilter):
 
     def process(self, batch, request):
 
-        if not self.distance_array_key in request:
+        if self.distance_array_key not in request:
             return
 
         voxel_size = self.spec[self.label_array_key].voxel_size
-        if self.label_id is not None:
-            binary_label = np.logical_or.reduce([batch.arrays[self.label_array_key].data == lid for lid in
-                                             self.label_id])
-        else:
-            binary_label = batch.arrays[self.label_array_key].data > 0
+        data = batch.arrays[self.label_array_key].data
         mask = batch.arrays[self.mask_array_key].data
-        dim = len(binary_label.shape)
 
-        if binary_label.std() == 0:
-            max_distance = min(dim*vs for dim, vs in zip(binary_label.shape, voxel_size))
-            if np.sum(binary_label) == 0:
-                distances = - np.ones(binary_label.shape, dtype=np.float32) * max_distance
-            else:
-                distances = np.ones(binary_label.shape, dtype=np.float32) * max_distance
+        if self.label_id is not None:
+            # consider replacing this line with np.in1d(data.ravel(), self.label_id).reshape(data.shape)
+            binary_label = np.logical_or.reduce([data == lid for lid in self.label_id])
         else:
-            distances = distance_transform_edt(binary_label * np.logical_not(mask),
-                                               sampling=tuple(float(v) for v in voxel_size))
-            distances -= distance_transform_edt(np.logical_not(binary_label) * np.logical_not(mask),
-                                                sampling=tuple(float(v) for v in voxel_size))
+            binary_label = data > 0
+
+        dims = binary_label.ndim
+
+        # check if inside a label, or if there is no label
+        if binary_label.std() == 0:
+            max_distance = min(dim * vs for dim, vs in zip(binary_label.shape, voxel_size))
+            distances = np.ones(binary_label.shape, dtype=np.float32) * max_distance
+
+            # no label
+            if binary_label.sum() == 0:
+                distances *= -1
+
+        else:
+            sampling = tuple(float(v) for v in voxel_size)
+            distances = self.__signed_distance(binary_label * np.logical_not(mask), sampling=sampling)
+
+        # modify in-place the label mask
+        mask = self.__constrain_distances(mask, distances)
 
         if isinstance(self.factor, tuple):
             slices = tuple(slice(None, None, k) for k in self.factor)
         else:
-            slices = tuple(slice(None, None, self.factor) for _ in range(dim))
+            slices = tuple(slice(None, None, self.factor) for _ in range(dims))
 
         distances = distances[slices]
+        mask = mask[slices]
+
         if self.normalize is not None:
             distances = self.__normalize(distances, self.normalize, self.normalize_args)
 
         spec = self.spec[self.distance_array_key].copy()
         spec.roi = request[self.distance_array_key].roi
+
+        batch.arrays[self.mask_array_key] = Array(mask, spec)
         batch.arrays[self.distance_array_key] = Array(distances, spec)
 
-    def __normalize(self, distances, norm, normalize_args):
+    @staticmethod
+    def __normalize(distances, norm, normalize_args):
         if norm == 'tanh':
             scale = normalize_args
             return np.tanh(distances/scale)
@@ -115,4 +134,21 @@ class AddDistance(BatchFilter):
         else:
             raise ValueError("unknown normalization method {0:}".format(norm))
 
+    @staticmethod
+    def __signed_distance(label, **kwargs):
+        # calculate signed distance transform relative to a binary label. Positive distance inside the object,
+        # negative distance outside the object
+        return distance_transform_edt(label, **kwargs) - distance_transform_edt(np.logical_not(label), **kwargs)
 
+    @staticmethod
+    def __constrain_distances(mask, distances):
+        # remove elements from the mask where the label distances exceed the distance from the boundary
+
+        tmp = np.zeros(mask.shape, dtype=mask.dtype)
+        slices = tmp.ndim * (slice(1, -1),)
+        tmp[slices] = mask[slices]
+        boundary_distance = distance_transform_edt(tmp)
+        mask_output = mask.copy()
+        mask_output[distances > boundary_distance] = 0
+
+        return mask_output
