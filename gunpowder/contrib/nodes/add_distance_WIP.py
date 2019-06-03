@@ -137,8 +137,18 @@ class AddDistanceWIP(BatchFilter):
     @staticmethod
     def __signed_distance(label, **kwargs):
         # calculate signed distance transform relative to a binary label. Positive distance inside the object,
-        # negative distance outside the object
-        return distance_transform_edt(label, **kwargs) - distance_transform_edt(np.logical_not(label), **kwargs)
+        # negative distance outside the object. This function estimates signed distance by taking the difference
+        # between the distance transform of the label ("inner distances") and the distance transform of
+        # the complement of the label ("outer distances"). This method requires subtracting .5 (half a pixel's
+        # distance) from the non-zero inner and outer distances before
+        tweak = .5
+        inner_distance = distance_transform_edt(label, **kwargs)
+        outer_distance = distance_transform_edt(np.logical_not(label), **kwargs)
+        result = inner_distance - outer_distance
+        result[result > 0] -= tweak
+        result[result < 0] += tweak
+
+        return result
 
     @staticmethod
     def __constrain_distances(mask, distances):
