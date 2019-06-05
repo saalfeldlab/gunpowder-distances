@@ -36,16 +36,12 @@ class AddDistanceIsotropic(BatchFilter):
             label_array_key,
             distance_array_key,
             mask_array_key,
-            normalize=None,
-            normalize_args=None,
             label_id=None,
             factor=1):
 
         self.label_array_key = label_array_key
         self.distance_array_key = distance_array_key
         self.mask_array_key = mask_array_key
-        self.normalize = normalize
-        self.normalize_args = normalize_args
         if not isinstance(label_id, collections.Iterable) and label_id is not None:
             label_id = (label_id,)
         self.label_id = label_id
@@ -113,26 +109,11 @@ class AddDistanceIsotropic(BatchFilter):
         mask_voxel_size = tuple(float(v) for v in self.spec[self.mask_array_key].voxel_size)
         mask = self.__constrain_distances(mask, distances, mask_voxel_size)
 
-        if self.normalize is not None:
-            distances = self.__normalize(distances, self.normalize, self.normalize_args)
-
         spec = self.spec[self.distance_array_key].copy()
         spec.roi = request[self.distance_array_key].roi
 
         batch.arrays[self.mask_array_key] = Array(mask, spec)
         batch.arrays[self.distance_array_key] = Array(distances, spec)
-
-    @staticmethod
-    def __normalize(distances, norm, normalize_args):
-        if norm == 'tanh':
-            scale = normalize_args
-            return np.tanh(distances/scale)
-        elif norm == 'tanh+':
-            scale = normalize_args[0]
-            add = normalize_args[1]
-            return np.tanh((distances+add)/scale)
-        else:
-            raise ValueError("unknown normalization method {0:}".format(norm))
 
     @staticmethod
     def __signed_distance(label, **kwargs):
