@@ -65,7 +65,6 @@ class AddDistanceWIP(BatchFilter):
         spec.dtype = np.float32
         spec.voxel_size *= self.factor
         self.provides(self.distance_array_key, spec)
-        self.provides(self.mask_array_key, spec)
 
     def prepare(self, request):
 
