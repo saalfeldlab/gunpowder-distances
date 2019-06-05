@@ -77,8 +77,7 @@ class AddDistanceIsotropic(BatchFilter):
         mask = batch.arrays[self.mask_array_key].data
 
         if self.label_id is not None:
-            # consider replacing this line with np.in1d(data.ravel(), self.label_id).reshape(data.shape)
-            binary_label = np.logical_or.reduce([data == lid for lid in self.label_id])
+            binary_label = np.in1d(data.ravel(), self.label_id).reshape(data.shape)
         else:
             binary_label = data > 0
 
