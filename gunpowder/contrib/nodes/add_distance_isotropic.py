@@ -8,7 +8,7 @@ from gunpowder.nodes.batch_filter import BatchFilter
 logger = logging.getLogger(__name__)
 
 
-class AddDistanceWIP(BatchFilter):
+class AddDistanceIsotropic(BatchFilter):
     '''Compute array with signed distances from specific labels
 
     Args:
@@ -63,6 +63,7 @@ class AddDistanceWIP(BatchFilter):
 
         spec = self.spec[self.label_array_key].copy()
         spec.dtype = np.float32
+        assert len(set(spec.voxel_size)) == 1, "This node only works with isotropic data"
         spec.voxel_size *= self.factor
         self.provides(self.distance_array_key, spec)
 
@@ -140,7 +141,7 @@ class AddDistanceWIP(BatchFilter):
         # between the distance transform of the label ("inner distances") and the distance transform of
         # the complement of the label ("outer distances"). To compensate for an edge effect, .5 (half a pixel's
         # distance) is added to the positive distances and subtracted from the negative distances.
-        tweak = .5
+        tweak = kwargs['sampling'][0]*.5
         inner_distance = distance_transform_edt(label, **kwargs)
         outer_distance = distance_transform_edt(np.logical_not(label), **kwargs)
         result = inner_distance - outer_distance
