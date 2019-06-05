@@ -158,6 +158,6 @@ class AddDistanceWIP(BatchFilter):
         tmp[slices] = mask[slices]
         boundary_distance = distance_transform_edt(tmp, sampling=mask_sampling)
         mask_output = mask.copy()
-        mask_output[distances > boundary_distance] = 0
+        mask_output[abs(distances) > boundary_distance] = 0
 
         return mask_output
