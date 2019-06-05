@@ -21,10 +21,7 @@ class AddDistanceIsotropic(BatchFilter):
         mask_array_key(:class:``ArrayKey``): The :class:``ArrayKey`` to update in order to compensate for windowing
         artifacts after distance transformation.
 
-        normalize(str, optional): String defining the type of normalization, so far 'tanh'. None for no normalization.
-            'tanh': compute tanh(distance/normalize_args)
-
-        normalize_args(optional): additional arguments for the normalization, specifics depend on normalize.
+        add_constant(scalar, optional): constant value to add to distance transform (before adapting mask for
 
         label_id (int, tuple, optional): ids from which to compute distance transform (defaults to 1)
 
