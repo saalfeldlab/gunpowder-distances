@@ -99,10 +99,7 @@ class AddDistanceWIP(BatchFilter):
 
         else:
             sampling = tuple(float(v) for v in voxel_size)
-            distances = self.__signed_distance(binary_label * np.logical_not(mask), sampling=sampling)
-
-        # modify in-place the label mask
-        mask = self.__constrain_distances(mask, distances)
+            distances = self.__signed_distance(binary_label, sampling=sampling)
 
         if isinstance(self.factor, tuple):
             slices = tuple(slice(None, None, k) for k in self.factor)
@@ -110,7 +107,10 @@ class AddDistanceWIP(BatchFilter):
             slices = tuple(slice(None, None, self.factor) for _ in range(dims))
 
         distances = distances[slices]
-        mask = mask[slices]
+
+        # modify in-place the label mask
+        mask_voxel_size = tuple(float(v) for v in self.spec[self.mask_array_key].voxel_size)
+        mask = self.__constrain_distances(mask, distances, mask_voxel_size)
 
         if self.normalize is not None:
             distances = self.__normalize(distances, self.normalize, self.normalize_args)
@@ -150,13 +150,13 @@ class AddDistanceWIP(BatchFilter):
         return result
 
     @staticmethod
-    def __constrain_distances(mask, distances):
+    def __constrain_distances(mask, distances, mask_sampling):
         # remove elements from the mask where the label distances exceed the distance from the boundary
 
         tmp = np.zeros(mask.shape, dtype=mask.dtype)
         slices = tmp.ndim * (slice(1, -1),)
         tmp[slices] = mask[slices]
-        boundary_distance = distance_transform_edt(tmp)
+        boundary_distance = distance_transform_edt(tmp, sampling=mask_sampling)
         mask_output = mask.copy()
         mask_output[distances > boundary_distance] = 0
 
