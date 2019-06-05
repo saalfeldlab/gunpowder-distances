@@ -153,10 +153,11 @@ class AddDistanceWIP(BatchFilter):
     def __constrain_distances(mask, distances, mask_sampling):
         # remove elements from the mask where the label distances exceed the distance from the boundary
 
-        tmp = np.zeros(mask.shape, dtype=mask.dtype)
+        tmp = np.zeros(np.array(mask.shape) + np.array((2,)*mask.ndim), dtype=mask.dtype)
         slices = tmp.ndim * (slice(1, -1),)
-        tmp[slices] = mask[slices]
+        tmp[slices] = mask
         boundary_distance = distance_transform_edt(tmp, sampling=mask_sampling)
+        boundary_distance = boundary_distance[slices]
         mask_output = mask.copy()
         mask_output[abs(distances) > boundary_distance] = 0
 
