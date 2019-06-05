@@ -36,6 +36,7 @@ class AddDistanceIsotropic(BatchFilter):
             label_array_key,
             distance_array_key,
             mask_array_key,
+            add_constant=None,
             label_id=None,
             factor=1):
 
@@ -46,6 +47,7 @@ class AddDistanceIsotropic(BatchFilter):
             label_id = (label_id,)
         self.label_id = label_id
         self.factor = factor
+        self.add_constant = add_constant
 
     def setup(self):
 
@@ -104,6 +106,9 @@ class AddDistanceIsotropic(BatchFilter):
             slices = tuple(slice(None, None, self.factor) for _ in range(dims))
 
         distances = distances[slices]
+
+        if self.add_constant is not None:
+            distances += self.add_constant
 
         # modify in-place the label mask
         mask_voxel_size = tuple(float(v) for v in self.spec[self.mask_array_key].voxel_size)
