@@ -1,7 +1,7 @@
 import logging
 import numpy as np
 
-from .batch_filter import BatchFilter
+from gunpowder.nodes.batch_filter import BatchFilter
 
 logger = logging.getLogger(__name__)
 
