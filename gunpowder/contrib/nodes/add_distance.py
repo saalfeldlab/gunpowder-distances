@@ -20,13 +20,17 @@ class AddDistance(BatchFilter):
             distance transform.
 
         mask_array_key(:class:``ArrayKey``): The :class:``ArrayKey`` to update in order to compensate for windowing
-        artifacts after distance transformation.
+            artifacts after distance transformation.
 
         add_constant(scalar, optional): constant value to add to distance transform (before adapting mask for
 
         label_id (int, tuple, optional): ids from which to compute distance transform (defaults to 1)
 
         factor (int, tuple, optional): distances are downsampled by this factor
+
+        max_distance(scalar, tuple, optional): maximal distance that computed distances will be clipped to. For a
+            single value this is the absolute value of the minimal and maximal distance. A tuple should be given as (
+            minimal_distance, maximal_distance)
     '''
 
     def __init__(
@@ -36,7 +40,9 @@ class AddDistance(BatchFilter):
             mask_array_key,
             add_constant=None,
             label_id=None,
-            factor=1):
+            factor=1,
+            max_distance=None
+            ):
 
         self.label_array_key = label_array_key
         self.distance_array_key = distance_array_key
@@ -46,6 +52,7 @@ class AddDistance(BatchFilter):
         self.label_id = label_id
         self.factor = factor
         self.add_constant = add_constant
+        self.max_distance = max_distance
 
     def setup(self):
 
@@ -85,8 +92,8 @@ class AddDistance(BatchFilter):
 
         # check if inside a label, or if there is no label
         if binary_label.std() == 0:
-            max_distance = min(dim * vs for dim, vs in zip(binary_label.shape, voxel_size))
-            distances = np.ones(binary_label.shape, dtype=np.float32) * max_distance
+            max_possible_distance = min(dim * vs for dim, vs in zip(binary_label.shape, voxel_size))
+            distances = np.ones(binary_label.shape, dtype=np.float32) * max_possible_distance
 
             # no label
             if binary_label.sum() == 0:
@@ -106,6 +113,9 @@ class AddDistance(BatchFilter):
         if self.add_constant is not None:
             distances += self.add_constant
 
+        if self.max_distance is not None:
+            distances = self.__clip_distance(distances, self.max_distance)
+
         # modify in-place the label mask
         mask_voxel_size = tuple(float(v) for v in self.spec[self.mask_array_key].voxel_size)
         mask = self.__constrain_distances(mask, distances, mask_voxel_size)
@@ -115,6 +125,13 @@ class AddDistance(BatchFilter):
 
         batch.arrays[self.mask_array_key] = Array(mask, spec)
         batch.arrays[self.distance_array_key] = Array(distances, spec)
+
+    @staticmethod
+    def __clip_distance(distances, max_distance):
+        if not isinstance(max_distance, tuple):
+            max_distance = (-max_distance, max_distance)
+        distances = np.clip(distances, max_distance[0], max_distance[1])
+        return distances
 
     @staticmethod
     def __signed_distance(label, **kwargs):
@@ -132,8 +149,7 @@ class AddDistance(BatchFilter):
 
         return result
 
-    @staticmethod
-    def __constrain_distances(mask, distances, mask_sampling):
+    def __constrain_distances(self, mask, distances, mask_sampling):
         # remove elements from the mask where the label distances exceed the distance from the boundary
 
         tmp = np.zeros(np.array(mask.shape) + np.array((2,)*mask.ndim), dtype=mask.dtype)
@@ -144,6 +160,9 @@ class AddDistance(BatchFilter):
                                                                                                       tmp.ndim)),
                                                                   sampling=mask_sampling)
         boundary_distance = boundary_distance[slices]
+        if self.max_distance is not None:
+            boundary_distance = self.__clip_distance(boundary_distance, self.max_distance)
+
         mask_output = mask.copy()
         mask_output[abs(distances) > boundary_distance] = 0
 
