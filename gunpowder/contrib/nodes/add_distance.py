@@ -162,6 +162,8 @@ class AddDistance(BatchFilter):
         boundary_distance = boundary_distance[slices]
         if self.max_distance is not None:
             boundary_distance = self.__clip_distance(boundary_distance, self.max_distance)
+        if self.add_constant is not None:
+            boundary_distance += self.add_constant
 
         mask_output = mask.copy()
         mask_output[abs(distances) > boundary_distance] = 0
