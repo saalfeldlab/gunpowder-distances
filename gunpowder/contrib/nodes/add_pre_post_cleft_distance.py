@@ -2,7 +2,8 @@ import logging
 import numpy as np
 
 from numpy.lib.stride_tricks import as_strided
-from scipy.ndimage.morphology import distance_transform_edt
+from scipy.ndimage.morphology import distance_transform_edt, binary_erosion
+from scipy.ndimage import generate_binary_structure
 from gunpowder.array import Array
 from gunpowder.nodes.batch_filter import BatchFilter
 
@@ -16,16 +17,39 @@ class AddPrePostCleftDistance(BatchFilter):
     distance to the boundary between labels or the background label (0).
 
     Args:
+        cleft_array_key(:class:``ArrayKey``): The :class:``ArrayKey`` to read the cleft labels from.
 
-        label_array_key(:class:``VolumeType``): The volume type to read the
-            labels from.
+        label_array_key(:class:``ArrayKey``): The :class:``ArrayKey`` to read the
+            neuron labels from.
 
-        distance_array_key(:class:``VolumeType``, optional): The volume type
-            to generate containing the values of the distance transform.
+        presyn_distance_array_key(:class:``ArrayKey``): The class ``ArrayKey`` to generate containing the values of
+            the distance transform masked to the presynaptic sites.
 
-        boundary_array_key(:class:``VolumeType``, optional): The volume type
-            to generate containing a boundary labeling. Note this volume will
-            be doubled as it encodes boundaries between voxels.
+        postsyn_distance_array_key(:class:``ArrayKey``): The class ``ArrayKey`` to generate containting the values of
+            the distance transform  masked to the postsynaptic sites.
+
+        presyn_mask_array_key(:class:``ArrayKey``): The class ``ArrayKey`` to update in order to compensate for
+            windowing artifacts after distance transform for the presynaptic array.
+
+        postsyn_mask_array_key(:class:``ArrayKey``): The class ``ArrayKey`` to update in order to compensate for
+            windowing artifacts after distance transform for the postsynaptic array.
+
+        cleft_to_presyn_neuron_id(dict): The dictionary that maps cleft ids to corresponding presynaptic neuron ids.
+
+        cleft_to_postsyn_neuron_id(dict): The dictionary that maps cleft ids to corresponding presynaptic neuron ids.
+
+        bg_value(int, optional): The background value in the cleft array. (default: 0)
+
+        include_cleft(boolean, optional): whether to include the whole cleft as part of the label when  calculating
+            the distance transform (default: True)
+
+        add_constant(scalar, optional): constant value to add to distance transform (default: None, i.e. nothing is
+            added)
+
+        max_distance(scalar, tuple, optional): maximal distance that computed distances will be clipped to. For a
+            single value this is the absolute value of the minimal and maximal distance. A tuple should be given as (
+            minimal_distance, maximal_distance) (default: None, i.e. no clipping)
+
     '''
 
         # gradient_array_key(:class:``VolumeType``): The volume type to
@@ -45,28 +69,31 @@ class AddPrePostCleftDistance(BatchFilter):
             self,
             cleft_array_key,
             label_array_key,
-
             presyn_distance_array_key,
             postsyn_distance_array_key,
+            presyn_mask_array_key,
+            postsyn_mask_array_key,
             cleft_to_presyn_neuron_id,
             cleft_to_postyn_neuron_id,
-            normalize=None,
-            normalize_args=None,
             bg_value=0,
-            include_cleft=True
+            include_cleft=True,
+            add_constant=None,
+            max_distance=None
     ):
 
         self.cleft_array_key = cleft_array_key
         self.label_array_key = label_array_key
+        self.presyn_mask_array_key = presyn_mask_array_key
+        self.postsyn_mask_array_key = postsyn_mask_array_key
 
         self.presyn_distance_array_key = presyn_distance_array_key
         self.postsyn_distance_array_key = postsyn_distance_array_key
         self.cleft_to_presyn_neuron_id = cleft_to_presyn_neuron_id
         self.cleft_to_postsyn_neuron_id = cleft_to_postyn_neuron_id
-        self.normalize = normalize
-        self.normalize_args = normalize_args
         self.bg_value = bg_value
         self.include_cleft = include_cleft
+        self.max_distance = max_distance
+        self.add_constant = add_constant
 
     def setup(self):
 
@@ -97,91 +124,127 @@ class AddPrePostCleftDistance(BatchFilter):
                 self.postsyn_distance_array_key not in request):
             return
 
+        voxel_size = self.spec[self.cleft_array_key].voxel_size
         clefts = batch.arrays[self.cleft_array_key].data
         labels = batch.arrays[self.label_array_key].data
-        voxel_size = self.spec[self.cleft_array_key].voxel_size
-        max_distance = min(dim * vs for dim, vs in zip(clefts.shape, voxel_size))
+        pre_mask = batch.arrays[self.presyn_mask_array_key].data
+        post_mask = batch.arrays[self.postsyn_mask_array_key].data
+        max_possible_distance = min(dim * vs for dim, vs in zip(clefts.shape, voxel_size))
 
         if (self.presyn_distance_array_key is not None and
                 self.presyn_distance_array_key in request):
-            presyn_distances = -np.ones(clefts.shape, dtype=np.float) * max_distance
+            presyn_distances = -np.ones(clefts.shape, dtype=np.float) * max_possible_distance
         if (self.postsyn_distance_array_key is not None and
                 self.postsyn_distance_array_key in request):
-            postsyn_distances = -np.ones(clefts.shape, dtype=np.float) * max_distance
+            postsyn_distances = -np.ones(clefts.shape, dtype=np.float) * max_possible_distance
         if (self.presyn_distance_array_key is not None and
             self.presyn_distance_array_key in request) or (self.postsyn_distance_array_key is not None and
                                                            self.postsyn_distance_array_key in request):
             contained_cleft_ids = np.unique(clefts)
             for cleft_id in contained_cleft_ids:
                 if cleft_id != self.bg_value:
-                    d = -distance_transform_edt(clefts != cleft_id, sampling=voxel_size)
+                    d = self.__signed_distance(clefts == cleft_id, sampling=voxel_size)
                     if (self.presyn_distance_array_key is not None and
                             self.presyn_distance_array_key in request):
                         try:
                             pre_neuron_id = np.array(list(self.cleft_to_presyn_neuron_id[cleft_id]))
-                            pre_mask = np.any(labels[..., None] == pre_neuron_id[None, ...],axis=-1)
+                            pre_mask = np.any(labels[..., None] == pre_neuron_id[None, ...], axis=-1)
                             if self.include_cleft:
-                                pre_mask = np.any([pre_mask, clefts==cleft_id], axis=0)
+                                pre_mask = np.any([pre_mask, clefts == cleft_id], axis=0)
                             presyn_distances[pre_mask] = np.max((presyn_distances, d), axis=0)[pre_mask]
                         except KeyError:
-                            logger.warning("No Key in Pre Dict %s" %str(cleft_id))
+                            logger.warning("No Key in Pre Dict %s" % str(cleft_id))
+
                     if (self.postsyn_distance_array_key is not None and
                             self.postsyn_distance_array_key in request):
                         try:
                             post_neuron_id = np.array(list(self.cleft_to_postsyn_neuron_id[cleft_id]))
                             post_mask = np.any(labels[..., None] == post_neuron_id[None, ...], axis=-1)
                             if self.include_cleft:
-                                post_mask = np.any([post_mask, clefts==cleft_id], axis=0)
+                                post_mask = np.any([post_mask, clefts == cleft_id], axis=0)
                             postsyn_distances[post_mask] = np.max((postsyn_distances, d), axis=0)[post_mask]
                         except KeyError:
                             logger.warning("No Key in Post Dict %s" %str(cleft_id))
+
+            if self.add_constant is not None:
+                if self.presyn_distance_array_key is not None and self.presyn_distance_array_key in request:
+                    presyn_distances += self.add_constant
+
+                if self.postsyn_distance_array_key is not None and self.postsyn_distance_array_key in request:
+                    postsyn_distances += self.add_constant
+
+            if self.max_distance is not None:
+                if self.presyn_distance_array_key is not None and self.presyn_distance_array_key in request:
+                    presyn_distances = self.__clip_distance(presyn_distances, self.max_distance)
+
+                if self.postsyn_distance_array_key is not None and self.postsyn_distance_array_key in request:
+                    postsyn_distances = self.__clip_distance(postsyn_distances, self.max_distance)
+            if self.presyn_distance_array_key is not None and self.presyn_distance_array_key in request:
+                pre_mask = self.__constrain_distances(pre_mask, presyn_distances, self.spec[
+                    self.presyn_mask_array_key].voxel_size)
+            if self.postsyn_distance_array_key is not None and self.postsyn_distance_array_key in request:
+                post_mask = self.__constrain_distances(post_mask, postsyn_distances, self.spec[
+                self.postsyn_mask_array_key].voxel_size)
+
+
             if (self.presyn_distance_array_key is not None and
                     self.presyn_distance_array_key in request):
                 #presyn_distances = np.expand_dims(presyn_distances, 0)
-                if self.normalize is not None:
-                    presyn_distances = self.__normalize(presyn_distances, self.normalize, self.normalize_args)
                 pre_spec = self.spec[self.presyn_distance_array_key].copy()
                 pre_spec.roi = request[self.presyn_distance_array_key].roi
                 batch.arrays[self.presyn_distance_array_key] = Array(presyn_distances, pre_spec)
+                batch.arrays[self.presyn_mask_array_key] = Array(pre_mask, pre_spec)
 
             if (self.postsyn_distance_array_key is not None and
                     self.postsyn_distance_array_key in request):
 
                 #postsyn_distances = np.expand_dims(postsyn_distances, 0)
-                if self.normalize is not None:
-                    postsyn_distances = self.__normalize(postsyn_distances, self.normalize, self.normalize_args)
                 post_spec = self.spec[self.postsyn_distance_array_key].copy()
                 post_spec.roi = request[self.postsyn_distance_array_key].roi
                 batch.arrays[self.postsyn_distance_array_key] = Array(postsyn_distances, post_spec)
+                batch.arrays[self.postsyn_mask_array_key] = Array(post_mask, post_spec)
 
+    @staticmethod
+    def __signed_distance(label, **kwargs):
+        # calculate signed distance transform relative to a binary label. Positive distance inside the object,
+        # negative distance outside the object. This function estimates signed distance by taking the difference
+        # between the distance transform of the label ("inner distances") and the distance transform of
+        # the complement of the label ("outer distances"). To compensate for an edge effect, .5 (half a pixel's
+        # distance) is added to the positive distances and subtracted from the negative distances.
+        inner_distance = distance_transform_edt(binary_erosion(label, border_value=1,
+                                                               structure=generate_binary_structure(label.ndim,
+                                                                                                   label.ndim)),
+                                                               **kwargs)
+        outer_distance = distance_transform_edt(np.logical_not(label), **kwargs)
+        result = inner_distance - outer_distance
 
-    def __normalize(self, distances, norm, normalize_args):
+        return result
 
-        if norm == 'tanh':
-            scale = normalize_args
-            return np.tanh(distances/scale)
+    def __constrain_distances(self, mask, distances, mask_sampling):
+        # remove elements from the mask where the label distances exceed the distance from the boundary
 
-    #def __normalize(self, gradients, norm):
-#
-    #    dims = gradients.shape[0]
-#
-    #    if norm == 'l1':
-    #        factors = sum([np.abs(gradients[d]) for d in range(dims)])
-    #    elif norm == 'l2':
-    #        factors = np.sqrt(
-    #                sum([np.square(gradients[d]) for d in range(dims)]))
-    #    else:
-    #        raise RuntimeError('norm %s not supported'%norm)
-#
-    #    factors[factors < 1e-5] = 1
-    #    gradients /= factors
-#
-    #def __scale(self, gradients, distances, scale, scale_args):
-#
-    #    dims = gradients.shape[0]
-#
-    #    if scale == 'exp':
-    #        alpha, beta = self.scale_args
-    #        factors = np.exp(-distances*alpha)*beta
-#
-    #    gradients *= factors
+        tmp = np.zeros(np.array(mask.shape) + np.array((2,)*mask.ndim), dtype=mask.dtype)
+        slices = tmp.ndim * (slice(1, -1),)
+        tmp[slices] = mask
+        boundary_distance = distance_transform_edt(binary_erosion(tmp, border_value=1,
+                                                                  structure=generate_binary_structure(tmp.ndim,
+                                                                                                      tmp.ndim)),
+                                                                  sampling=mask_sampling)
+        boundary_distance = boundary_distance[slices]
+        if self.max_distance is not None:
+            boundary_distance = self.__clip_distance(boundary_distance, self.max_distance)
+        if self.add_constant is not None:
+            boundary_distance += self.add_constant
+
+        mask_output = mask.copy()
+        mask_output[abs(distances) > boundary_distance] = 0
+
+        return mask_output
+
+    @staticmethod
+    def __clip_distance(distances, max_distance):
+        if not isinstance(max_distance, tuple):
+            max_distance = (-max_distance, max_distance)
+        distances = np.clip(distances, max_distance[0], max_distance[1])
+        return distances
+
