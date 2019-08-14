@@ -22,7 +22,7 @@ class AddDistance(BatchFilter):
         mask_array_key(:class:``ArrayKey``): The :class:``ArrayKey`` to update in order to compensate for windowing
             artifacts after distance transformation.
 
-        add_constant(scalar, optional): constant value to add to distance transform (before adapting mask for
+        add_constant(scalar, optional): constant value to add to distance transform
 
         label_id (int, tuple, optional): ids from which to compute distance transform (defaults to 1)
 
