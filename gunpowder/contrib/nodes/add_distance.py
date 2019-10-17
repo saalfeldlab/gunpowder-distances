@@ -82,7 +82,7 @@ class AddDistance(BatchFilter):
         voxel_size = self.spec[self.label_array_key].voxel_size
         data = batch.arrays[self.label_array_key].data
         mask = batch.arrays[self.mask_array_key].data
-
+        logging.debug("labels contained in batch {0:}".format(np.unique(data)))
         if self.label_id is not None:
             binary_label = np.in1d(data.ravel(), self.label_id).reshape(data.shape)
         else:
@@ -91,18 +91,34 @@ class AddDistance(BatchFilter):
         dims = binary_label.ndim
 
         # check if inside a label, or if there is no label
-        if binary_label.std() == 0:
-            max_possible_distance = min(dim * vs for dim, vs in zip(binary_label.shape, voxel_size))
-            distances = np.ones(binary_label.shape, dtype=np.float32) * max_possible_distance
 
-            # no label
+        sampling = tuple(float(v) for v in voxel_size)
+        constant_label = binary_label.std() == 0
+        if constant_label:
+            tmp = np.zeros(np.array(binary_label.shape) + np.array((2,)*binary_label.ndim), dtype=binary_label.dtype)
+            slices = tmp.ndim * (slice(1, -1),)
+            tmp[slices] = np.ones(binary_label.shape, dtype=binary_label.dtype)
+            distances = distance_transform_edt(binary_erosion(tmp, border_value=1,
+                                                              structure=generate_binary_structure(tmp.ndim, tmp.ndim)),
+                                                              sampling=sampling)
+            if self.max_distance is None:
+                logging.warning("Without a max distance to clip to constant batches will always be completely masked "
+                                "out")
+            else:
+                actual_max_distance = np.max(distances)
+                if self.max_distance > actual_max_distance:
+                    logging.warning("The given max distance {0:} to clip to is higher than the maximal distance ({"
+                                    "1:}) that can be contained in a batch of size {2:}".format(self.max_distance,
+                                                                                               actual_max_distance,
+                                                                                            binary_label.shape))
+
             if binary_label.sum() == 0:
+                distances += 1
                 distances *= -1
+            distances = distances[slices]
 
         else:
-            sampling = tuple(float(v) for v in voxel_size)
             distances = self.__signed_distance(binary_label, sampling=sampling)
-
         if isinstance(self.factor, tuple):
             slices = tuple(slice(None, None, k) for k in self.factor)
         else:
@@ -110,16 +126,19 @@ class AddDistance(BatchFilter):
 
         distances = distances[slices]
 
-        if self.add_constant is not None:
-            distances += self.add_constant
-
         if self.max_distance is not None:
-            distances = self.__clip_distance(distances, self.max_distance)
+            if self.add_constant is None:
+                add = 0
+            else:
+                add = self.add_constant
+            distances = self.__clip_distance(distances, (-self.max_distance-add, self.max_distance-add))
 
         # modify in-place the label mask
         mask_voxel_size = tuple(float(v) for v in self.spec[self.mask_array_key].voxel_size)
         mask = self.__constrain_distances(mask, distances, mask_voxel_size)
 
+        if self.add_constant is not None and not constant_label:
+            distances += self.add_constant
         spec = self.spec[self.distance_array_key].copy()
         spec.roi = request[self.distance_array_key].roi
 
@@ -153,19 +172,40 @@ class AddDistance(BatchFilter):
         # remove elements from the mask where the label distances exceed the distance from the boundary
 
         tmp = np.zeros(np.array(mask.shape) + np.array((2,)*mask.ndim), dtype=mask.dtype)
-        slices = tmp.ndim * (slice(1, -1),)
+        slices = tmp.ndim * (slice(1, -1), )
         tmp[slices] = mask
-        boundary_distance = distance_transform_edt(binary_erosion(tmp, border_value=1,
+        boundary_distance = distance_transform_edt(binary_erosion(tmp,
+                                                                  border_value=1,
                                                                   structure=generate_binary_structure(tmp.ndim,
                                                                                                       tmp.ndim)),
                                                                   sampling=mask_sampling)
         boundary_distance = boundary_distance[slices]
         if self.max_distance is not None:
-            boundary_distance = self.__clip_distance(boundary_distance, self.max_distance)
-        if self.add_constant is not None:
-            boundary_distance += self.add_constant
+            if self.add_constant is None:
+                add = 0
+            else:
+                add = self.add_constant
+            boundary_distance = self.__clip_distance(boundary_distance, (-self.max_distance-add, self.max_distance-add))
 
         mask_output = mask.copy()
-        mask_output[abs(distances) > boundary_distance] = 0
-
+        if self.max_distance is not None:
+            logging.debug("Total number of masked in voxels before distance masking {0:}".format(np.sum(mask_output)))
+            mask_output[(abs(distances) >= boundary_distance) *
+                        (distances >= 0) *
+                        (boundary_distance < self.max_distance - add)] = 0
+            logging.debug("Total number of masked in voxels after postive distance masking {0:}".format(np.sum(
+                mask_output)))
+            mask_output[(abs(distances) >= boundary_distance + 1) *
+                        (distances < 0) *
+                        (boundary_distance + 1 < self.max_distance - add)] = 0
+            logging.debug("Total number of masked in voxels after negative distance masking {0:}".format(np.sum(
+                mask_output)))
+        else:
+            logging.debug("Total number of masked in voxels before distance masking {0:}".format(np.sum(mask_output)))
+            mask_output[np.logical_and(abs(distances) >= boundary_distance, distances >= 0)] = 0
+            logging.debug("Total number of masked in voxels after postive distance masking {0:}".format(np.sum(
+                mask_output)))
+            mask_output[np.logical_and(abs(distances) >= boundary_distance + 1, distances < 0)] = 0
+            logging.debug("Total number of masked in voxels after negative distance masking {0:}".format(np.sum(
+                mask_output)))
         return mask_output
