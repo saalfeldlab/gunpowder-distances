@@ -48,7 +48,6 @@ class BalanceByThreshold(BatchFilter):
         self.slab = slab
         self.threshold = threshold
 
-        self.skip_next = False
 
     def setup(self):
 
@@ -63,19 +62,10 @@ class BalanceByThreshold(BatchFilter):
         spec = self.spec[self.labels].copy()
         spec.dtype = np.float32
         self.provides(self.scales, spec)
+        self.enable_autoskip()
 
-    def prepare(self, request):
-
-        self.skip_next = True
-        if self.scales in request:
-            del request[self.scales]
-            self.skip_next = False
 
     def process(self, batch, request):
-
-        if self.skip_next:
-            self.skip_next = False
-            return
 
         labels = batch.arrays[self.labels]
 
