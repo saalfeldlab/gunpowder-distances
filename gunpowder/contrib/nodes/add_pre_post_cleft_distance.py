@@ -1,5 +1,6 @@
 import logging
 import numpy as np
+import collections.abc
 
 from numpy.lib.stride_tricks import as_strided
 from scipy.ndimage.morphology import distance_transform_edt, binary_erosion
@@ -77,7 +78,10 @@ class AddPrePostCleftDistance(BatchFilter):
         self.postsyn_distance_array_key = postsyn_distance_array_key
         self.cleft_to_presyn_neuron_id = cleft_to_presyn_neuron_id
         self.cleft_to_postsyn_neuron_id = cleft_to_postyn_neuron_id
+        if not isinstance(bg_value, collections.abc.Iterable):
+            bg_value = (bg_value,)
         self.bg_value = bg_value
+        assert not isinstance(self.bg_value, set)
         self.include_cleft = include_cleft
         self.max_distance = max_distance
         self.add_constant = add_constant
