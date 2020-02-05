@@ -41,6 +41,7 @@ class AddDistance(BatchFilter):
             add_constant=None,
             label_id=None,
             factor=1,
+            bg_value=0,
             max_distance=None
             ):
 
@@ -50,6 +51,9 @@ class AddDistance(BatchFilter):
         if not isinstance(label_id, collections.Iterable) and label_id is not None:
             label_id = (label_id,)
         self.label_id = label_id
+        if not isinstance(bg_value, collections.Iterable):
+            bg_value = (bg_value,)
+        self.bg_value = bg_value
         self.factor = factor
         self.add_constant = add_constant
         self.max_distance = max_distance
@@ -86,7 +90,7 @@ class AddDistance(BatchFilter):
         if self.label_id is not None:
             binary_label = np.in1d(data.ravel(), self.label_id).reshape(data.shape)
         else:
-            binary_label = data > 0
+            binary_label = np.isin(data, self.bg_value, invert=True)
 
         dims = binary_label.ndim
 
