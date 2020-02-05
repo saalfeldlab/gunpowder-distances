@@ -1,6 +1,6 @@
 import logging
 import numpy as np
-import collections
+import collections.abc
 from scipy.ndimage.morphology import distance_transform_edt, binary_erosion
 from scipy.ndimage import generate_binary_structure
 from gunpowder.array import Array
@@ -48,12 +48,14 @@ class AddDistance(BatchFilter):
         self.label_array_key = label_array_key
         self.distance_array_key = distance_array_key
         self.mask_array_key = mask_array_key
-        if not isinstance(label_id, collections.Iterable) and label_id is not None:
+        if not isinstance(label_id, collections.abc.Iterable) and label_id is not None:
             label_id = (label_id,)
         self.label_id = label_id
-        if not isinstance(bg_value, collections.Iterable):
+        assert not isinstance(self.label_id, set)
+        if not isinstance(bg_value, collections.abc.Iterable):
             bg_value = (bg_value,)
         self.bg_value = bg_value
+        assert not isinstance(self.bg_value, set)
         self.factor = factor
         self.add_constant = add_constant
         self.max_distance = max_distance
@@ -88,7 +90,7 @@ class AddDistance(BatchFilter):
         mask = batch.arrays[self.mask_array_key].data
         logging.debug("labels contained in batch {0:}".format(np.unique(data)))
         if self.label_id is not None:
-            binary_label = np.in1d(data.ravel(), self.label_id).reshape(data.shape)
+            binary_label = np.isin(data, self.label_id)
         else:
             binary_label = np.isin(data, self.bg_value, invert=True)
 
