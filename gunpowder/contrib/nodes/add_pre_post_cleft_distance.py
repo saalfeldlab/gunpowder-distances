@@ -12,10 +12,11 @@ logger = logging.getLogger(__name__)
 
 
 class AddPrePostCleftDistance(BatchFilter):
-    '''Add a volume with vectors pointing away from the closest boundary.
+    '''Add two arrays with cleft distances being masked using their pre-and postsynaptic sites, respectively.
 
-    The vectors are the spacial gradients of the distance transform, i.e., the
-    distance to the boundary between labels or the background label (0).
+    Computes the cleft distance and then uses the dictionaries mapping cleft id to pre- and postsynaptic neuron ids
+    to generate two masks per cleft - one for the pre- and one for the postsynaptic sites for the values in the cleft
+    distance map.
 
     Args:
         cleft_array_key(:class:``ArrayKey``): The :class:``ArrayKey`` to read the cleft labels from.
