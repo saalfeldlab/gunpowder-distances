@@ -24,11 +24,17 @@ class AddPrePostCleftDistance(BatchFilter):
         label_array_key(:class:``ArrayKey``): The :class:``ArrayKey`` to read the
             neuron labels from.
 
+        cleft_distance_array_key(:class:``ArrayKey``): The class ``ArrayKey`` to generate containing the values of
+            the distance transform masked to the cleft.
+
         presyn_distance_array_key(:class:``ArrayKey``): The class ``ArrayKey`` to generate containing the values of
             the distance transform masked to the presynaptic sites.
 
         postsyn_distance_array_key(:class:``ArrayKey``): The class ``ArrayKey`` to generate containting the values of
             the distance transform  masked to the postsynaptic sites.
+
+        cleft_mask_array_key(:class:``ArrayKey``): The class ``ArrayKey`` to update in order to compensate for
+            windowing artifacts after distance transform for the cleft array.
 
         presyn_mask_array_key(:class:``ArrayKey``): The class ``ArrayKey`` to update in order to compensate for
             windowing artifacts after distance transform for the presynaptic array.
@@ -40,10 +46,10 @@ class AddPrePostCleftDistance(BatchFilter):
 
         cleft_to_postsyn_neuron_id(dict): The dictionary that maps cleft ids to corresponding presynaptic neuron ids.
 
-        bg_value(int, optional): The background value in the cleft array. (default: 0)
+        bg_value(int or tuple, optional): The background value in the cleft array, can be several. (default: 0)
 
         include_cleft(boolean, optional): whether to include the whole cleft as part of the label when  calculating
-            the distance transform (default: True)
+            the masked distance transform (default: True)
 
         add_constant(scalar, optional): constant value to add to distance transform (default: None, i.e. nothing is
             added)
@@ -58,8 +64,10 @@ class AddPrePostCleftDistance(BatchFilter):
             self,
             cleft_array_key,
             label_array_key,
+            cleft_distance_array_key,
             presyn_distance_array_key,
             postsyn_distance_array_key,
+            cleft_mask_array_key,
             presyn_mask_array_key,
             postsyn_mask_array_key,
             cleft_to_presyn_neuron_id,
@@ -72,9 +80,11 @@ class AddPrePostCleftDistance(BatchFilter):
 
         self.cleft_array_key = cleft_array_key
         self.label_array_key = label_array_key
+        self.cleft_mask_array_key = cleft_mask_array_key
         self.presyn_mask_array_key = presyn_mask_array_key
         self.postsyn_mask_array_key = postsyn_mask_array_key
 
+        self.cleft_distance_array_key = cleft_distance_array_key
         self.presyn_distance_array_key = presyn_distance_array_key
         self.postsyn_distance_array_key = postsyn_distance_array_key
         self.cleft_to_presyn_neuron_id = cleft_to_presyn_neuron_id
@@ -98,6 +108,8 @@ class AddPrePostCleftDistance(BatchFilter):
 
         spec = self.spec[self.label_array_key].copy()
         spec.dtype = np.float32
+        if self.cleft_distance_array_key is not None:
+            self.provides(self.cleft_distance_array_key, spec.copy())
         if self.presyn_distance_array_key is not None:
             self.provides(self.presyn_distance_array_key, spec.copy())
         if self.postsyn_distance_array_key is not None:
@@ -105,6 +117,8 @@ class AddPrePostCleftDistance(BatchFilter):
 
     def prepare(self, request):
 
+        if self.cleft_distance_array_key is not None and self.cleft_distance_array_key in request:
+            del request[self.cleft_distance_array_key]
         if self.presyn_distance_array_key is not None and self.presyn_distance_array_key in request:
             del request[self.presyn_distance_array_key]
         if self.postsyn_distance_array_key is not None and self.postsyn_distance_array_key in request:
@@ -112,7 +126,8 @@ class AddPrePostCleftDistance(BatchFilter):
 
     def process(self, batch, request):
 
-        if (self.presyn_distance_array_key not in request and
+        if (self.cleft_distance_array_key not in request and
+                self.presyn_distance_array_key not in request and
                 self.postsyn_distance_array_key not in request):
             return
 
@@ -121,10 +136,12 @@ class AddPrePostCleftDistance(BatchFilter):
         bg_mask = np.isin(clefts,self.bg_value)
         clefts[bg_mask] = self.bg_value[0]
         labels = batch.arrays[self.label_array_key].data
+        cleft_mask_total = batch.arrays[self.cleft_mask_array_key].data
         pre_mask_total = batch.arrays[self.presyn_mask_array_key].data
         post_mask_total = batch.arrays[self.postsyn_mask_array_key].data
-        if (self.presyn_distance_array_key is not None and self.presyn_distance_array_key in request) or (
-            self.postsyn_distance_array_key is not None and self.postsyn_distance_array_key in request):
+        if (self.cleft_distance_array_key is not None and self.cleft_distance_array_key in request) or (
+                self.presyn_distance_array_key is not None and self.presyn_distance_array_key in request) or (
+                self.postsyn_distance_array_key is not None and self.postsyn_distance_array_key in request):
 
             constant_label = clefts.std() == 0
 
@@ -147,6 +164,7 @@ class AddPrePostCleftDistance(BatchFilter):
             if self.bg_value[0] in clefts:
                 distances += 1
                 distances *= -1
+            cleft_distances = distances[slices]
             presyn_distances = distances[slices]
             postsyn_distances = distances[slices]
             if not constant_label:
@@ -154,6 +172,10 @@ class AddPrePostCleftDistance(BatchFilter):
                 for cleft_id in contained_cleft_ids:
                     if cleft_id != self.bg_value[0]:
                         d = self.__signed_distance(clefts == cleft_id, sampling=voxel_size)
+                        if (self.cleft_distance_array_key is not None and self.cleft_distance_array_key in request):
+                            if (cleft_id in self.cleft_to_presyn_neuron_id) or (
+                                    cleft_id in self.cleft_to_postsyn_neuron_id):
+                                cleft_distances = np.max((cleft_distances, d), axis=0)
                         if (self.presyn_distance_array_key is not None and
                                 self.presyn_distance_array_key in request):
                             try:
@@ -176,11 +198,17 @@ class AddPrePostCleftDistance(BatchFilter):
                             except KeyError:
                                 logger.warning("No Key in Post Dict %s" %str(cleft_id))
 
+
             if self.max_distance is not None:
                 if self.add_constant is None:
                     add = 0
                 else:
                     add = self.add_constant
+
+                if self.cleft_distance_array_key is not None and self.cleft_distance_array_key in request:
+                    cleft_distances = self.__clip_distance(cleft_distances, (-self.max_distance-add,
+                                                                             self.max_distance-add))
+
                 if self.presyn_distance_array_key is not None and self.presyn_distance_array_key in request:
                     presyn_distances = self.__clip_distance(presyn_distances, (-self.max_distance-add,
                                                             self.max_distance-add))
@@ -188,19 +216,32 @@ class AddPrePostCleftDistance(BatchFilter):
                 if self.postsyn_distance_array_key is not None and self.postsyn_distance_array_key in request:
                     postsyn_distances = self.__clip_distance(postsyn_distances, (-self.max_distance-add,
                                                                                  self.max_distance-add))
+
             if self.add_constant is not None and not constant_label:
+                if self.cleft_distance_array_key is not None and self.cleft_distance_array_key in request:
+                    cleft_distances += self.add_constant
                 if self.presyn_distance_array_key is not None and self.presyn_distance_array_key in request:
                     presyn_distances += self.add_constant
 
                 if self.postsyn_distance_array_key is not None and self.postsyn_distance_array_key in request:
                     postsyn_distances += self.add_constant
 
+            if self.cleft_distance_array_key is not None and self.cleft_distance_array_key in request:
+                cleft_mask_total = self.__constrain_distances(cleft_mask_total, cleft_distances, self.spec[
+                    self.cleft_mask_array_key].voxel_size)
             if self.presyn_distance_array_key is not None and self.presyn_distance_array_key in request:
                 pre_mask_total = self.__constrain_distances(pre_mask_total, presyn_distances, self.spec[
                     self.presyn_mask_array_key].voxel_size)
             if self.postsyn_distance_array_key is not None and self.postsyn_distance_array_key in request:
                 post_mask_total = self.__constrain_distances(post_mask_total, postsyn_distances, self.spec[
                     self.postsyn_mask_array_key].voxel_size)
+
+            if (self.cleft_distance_array_key is not None and
+                self.cleft_distance_array_key in request):
+                cleft_spec = self.spec[self.cleft_distance_array_key].copy()
+                cleft_spec.roi = request[self.cleft_distance_array_key].roi
+                batch.arrays[self.cleft_distance_array_key] = Array(cleft_distances, cleft_spec)
+                batch.arrays[self.cleft_mask_array_key] = Array(cleft_mask_total, cleft_spec)
 
 
             if (self.presyn_distance_array_key is not None and
