@@ -152,12 +152,12 @@ class AddPrePostCleftDistance(BatchFilter):
                                                    structure=generate_binary_structure(tmp.ndim, tmp.ndim)),
                                                    sampling=voxel_size)
             if self.max_distance is None:
-                logging.warning("Without a max distance to clip to constant batches will always be completely masked "
+                logger.warning("Without a max distance to clip to constant batches will always be completely masked "
                                     "out")
             else:
                 actual_max_distance = np.max(distances)
                 if self.max_distance > actual_max_distance:
-                    logging.warning("The given max distance {0:} to clip to is higher than the maximal distance ({"
+                    logger.warning("The given max distance {0:} to clip to is higher than the maximal distance ({"
                                         "1:}) that can be contained in a batch of size {2:}".format(self.max_distance,
                                                                                                    actual_max_distance,
                                                                                                 clefts.shape))
@@ -184,9 +184,9 @@ class AddPrePostCleftDistance(BatchFilter):
                                 if self.include_cleft:
                                     pre_mask = np.any([pre_mask, clefts == cleft_id], axis=0)
                                 presyn_distances[pre_mask] = np.max((presyn_distances, d), axis=0)[pre_mask]
-                            except KeyError:
-                                logger.warning("No Key in Pre Dict %s" % str(cleft_id))
-
+                            except KeyError as e:
+                                logger.error("No Key in Pre Dict %s" % str(cleft_id))
+                                raise e
                         if (self.postsyn_distance_array_key is not None and
                                 self.postsyn_distance_array_key in request):
                             try:
@@ -195,9 +195,9 @@ class AddPrePostCleftDistance(BatchFilter):
                                 if self.include_cleft:
                                     post_mask = np.any([post_mask, clefts == cleft_id], axis=0)
                                 postsyn_distances[post_mask] = np.max((postsyn_distances, d), axis=0)[post_mask]
-                            except KeyError:
-                                logger.warning("No Key in Post Dict %s" %str(cleft_id))
-
+                            except KeyError as e:
+                                logger.error("No Key in Post Dict %s" %str(cleft_id))
+                                raise e
 
             if self.max_distance is not None:
                 if self.add_constant is None:
