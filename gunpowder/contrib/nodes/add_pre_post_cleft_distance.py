@@ -72,6 +72,8 @@ class AddPrePostCleftDistance(BatchFilter):
             postsyn_mask_array_key,
             cleft_to_presyn_neuron_id,
             cleft_to_postyn_neuron_id,
+            cleft_to_presyn_neuron_id_filtered=None,
+            cleft_to_postsyn_neuron_id_filtered=None,
             bg_value=0,
             include_cleft=True,
             add_constant=None,
@@ -89,6 +91,8 @@ class AddPrePostCleftDistance(BatchFilter):
         self.postsyn_distance_array_key = postsyn_distance_array_key
         self.cleft_to_presyn_neuron_id = cleft_to_presyn_neuron_id
         self.cleft_to_postsyn_neuron_id = cleft_to_postyn_neuron_id
+        self.cleft_to_presyn_neuron_id_filtered = cleft_to_presyn_neuron_id_filtered
+        self.cleft_to_postsyn_neuron_id_filtered = cleft_to_postsyn_neuron_id_filtered
         if not isinstance(bg_value, collections.abc.Iterable):
             bg_value = (bg_value,)
         self.bg_value = bg_value
@@ -185,8 +189,13 @@ class AddPrePostCleftDistance(BatchFilter):
                                     pre_mask = np.any([pre_mask, clefts == cleft_id], axis=0)
                                 presyn_distances[pre_mask] = np.max((presyn_distances, d), axis=0)[pre_mask]
                             except KeyError as e:
-                                logger.error("No Key in Pre Dict %s" % str(cleft_id))
-                                raise e
+                                if self.cleft_to_presyn_neuron_id_filtered is not None:
+                                    if cleft_id in self.cleft_to_presyn_neuron_id_filtered:
+                                        logger.info("Key {0:} filtered out from Pre Dict".format(cleft_id))
+                                    else:
+                                        logger.error("No Key in Pre Dict %s" % str(cleft_id))
+                                        raise e
+
                         if (self.postsyn_distance_array_key is not None and
                                 self.postsyn_distance_array_key in request):
                             try:
@@ -196,8 +205,12 @@ class AddPrePostCleftDistance(BatchFilter):
                                     post_mask = np.any([post_mask, clefts == cleft_id], axis=0)
                                 postsyn_distances[post_mask] = np.max((postsyn_distances, d), axis=0)[post_mask]
                             except KeyError as e:
-                                logger.error("No Key in Post Dict %s" %str(cleft_id))
-                                raise e
+                                if self.cleft_to_postsyn_neuron_id_filtered is not None:
+                                    if cleft_id in self.cleft_to_postsyn_neuron_id_filtered:
+                                        logger.info("Key {0:} filtered out from Post Dict".format(cleft_id))
+                                    else:
+                                        logger.error("No Key in Post Dict %s" % str(cleft_id))
+                                        raise e
 
             if self.max_distance is not None:
                 if self.add_constant is None:
