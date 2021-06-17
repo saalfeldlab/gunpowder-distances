@@ -1,5 +1,4 @@
-from .batch_filter import BatchFilter
-from gunpowder.array import ArrayKeys, Array
+import gunpowder as gp
 import collections
 import itertools
 import logging
@@ -8,7 +7,7 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 
-class BalanceByThreshold(BatchFilter):
+class BalanceByThreshold(gp.BatchFilter):
     '''Creates a scale volume to balance the loss between positive and negative
     labels.
 
@@ -112,7 +111,7 @@ class BalanceByThreshold(BatchFilter):
 
         spec = self.spec[self.scales].copy()
         spec.roi = labels.spec.roi
-        batch.arrays[self.scales] = Array(error_scale, spec)
+        batch.arrays[self.scales] = gp.Array(error_scale, spec)
 
     def __balance(self, labels, scale):
 

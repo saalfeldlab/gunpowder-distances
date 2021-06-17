@@ -1,15 +1,14 @@
 import logging
 import numpy as np
+import gunpowder as gp
 import collections.abc
 from scipy.ndimage.morphology import distance_transform_edt, binary_erosion
 from scipy.ndimage import generate_binary_structure
-from gunpowder.array import Array
-from gunpowder.nodes.batch_filter import BatchFilter
 
 logger = logging.getLogger(__name__)
 
 
-class AddDistance(BatchFilter):
+class AddDistance(gp.BatchFilter):
     '''Compute array with signed distances from specific labels
 
     Args:
@@ -148,8 +147,8 @@ class AddDistance(BatchFilter):
         spec = self.spec[self.distance_array_key].copy()
         spec.roi = request[self.distance_array_key].roi
 
-        batch.arrays[self.mask_array_key] = Array(mask, spec)
-        batch.arrays[self.distance_array_key] = Array(distances, spec)
+        batch.arrays[self.mask_array_key] = gp.Array(mask, spec)
+        batch.arrays[self.distance_array_key] = gp.Array(distances, spec)
 
     @staticmethod
     def __clip_distance(distances, max_distance):

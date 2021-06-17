@@ -1,17 +1,16 @@
 import logging
 import numpy as np
+import gunpowder as gp
 import collections.abc
 
 from numpy.lib.stride_tricks import as_strided
 from scipy.ndimage.morphology import distance_transform_edt, binary_erosion
 from scipy.ndimage import generate_binary_structure
-from gunpowder.array import Array
-from gunpowder.nodes.batch_filter import BatchFilter
 
 logger = logging.getLogger(__name__)
 
 
-class AddPrePostCleftDistance(BatchFilter):
+class AddPrePostCleftDistance(gp.BatchFilter):
     '''Add two arrays with cleft distances being masked using their pre-and postsynaptic sites, respectively.
 
     Computes the cleft distance and then uses the dictionaries mapping cleft id to pre- and postsynaptic neuron ids

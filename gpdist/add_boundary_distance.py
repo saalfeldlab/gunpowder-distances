@@ -1,14 +1,12 @@
 import logging
 import numpy as np
-
+import gunpowder as gp
 from numpy.lib.stride_tricks import as_strided
 from scipy.ndimage.morphology import distance_transform_edt
-from gunpowder.array import Array
-from gunpowder.nodes.batch_filter import BatchFilter
 
 logger = logging.getLogger(__name__)
 
-class AddBoundaryDistance(BatchFilter):
+class AddBoundaryDistance(gp.BatchFilter):
     '''Compute array with signed distances of labels. In contrast to AddDistance this node computes the distance to
     boundaries by intermittently doubling the resolution. This allows for computing distances between labels of
     different ids. If the labeling is binary or multiple label ids should be treated as binary labels use AddDistance.
@@ -106,7 +104,7 @@ class AddBoundaryDistance(BatchFilter):
 
         spec = self.spec[self.distance_array_key].copy()
         spec.roi = request[self.distance_array_key].roi
-        batch.arrays[self.distance_array_key] = Array(distances, spec)
+        batch.arrays[self.distance_array_key] = gp.Array(distances, spec)
 
         if (
                 self.boundary_array_key is not None and
@@ -118,7 +116,7 @@ class AddBoundaryDistance(BatchFilter):
             grown[tuple(slice(0, s) for s in boundaries.shape)] = boundaries
             spec.voxel_size = voxel_size/2
             logger.debug("voxel size of boundary volume: %s", spec.voxel_size)
-            batch.arrays[self.boundary_array_key] = Array(grown, spec)
+            batch.arrays[self.boundary_array_key] = gp.Array(grown, spec)
 
     def __find_boundaries(self, labels):
 
